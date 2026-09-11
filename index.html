@@ -13,6 +13,7 @@
     --error: #dc2626; --error-bg: #fef2f2; --success: #16a34a;
     --code-bg: #f1f5f9; --shadow: 0 12px 32px rgba(15, 23, 42, .16);
     --mono: "SF Mono", "JetBrains Mono", Menlo, Consolas, "Courier New", monospace;
+    --editor-line-height: 21px;
   }
   html[data-theme="dark"] {
     --bg: #0b1220; --panel: #16213a; --border: #2c3a55; --text: #e2e8f0;
@@ -105,26 +106,50 @@
     height: 38px; flex: none; display: flex; align-items: center; padding: 0 12px;
     border-bottom: 1px solid var(--border); font-size: 12.5px; color: var(--muted); gap: 8px;
   }
+  .editor-actions { margin-left: auto; display: flex; gap: 4px; }
+  .editor-action {
+    border: 1px solid transparent; border-radius: 5px; background: transparent; color: var(--muted);
+    padding: 2px 5px; font: inherit; font-size: 11.5px; cursor: pointer;
+  }
+  .editor-action:hover { color: var(--primary); background: var(--hover); border-color: var(--border); }
   .pane-foot {
     height: 30px; flex: none; display: flex; align-items: center; gap: 12px;
     padding: 0 12px; border-top: 1px solid var(--border); font-size: 11.5px; color: var(--muted);
     white-space: nowrap; overflow: hidden;
   }
   /* ── JSON 编辑器：textarea + 高亮层叠加 ── */
-  .editor { position: relative; flex: 1; min-height: 0; display: flex; }
+  .editor { position: relative; flex: 1; min-height: 0; display: flex; overflow: hidden; }
+  .editor-gutter {
+    position: absolute; inset: 0 auto 0 0; z-index: 3; width: 52px; overflow: hidden;
+    background: var(--code-bg); border-right: 1px solid var(--border); color: var(--muted);
+    user-select: none; font-family: var(--mono); font-size: 12.5px; line-height: var(--editor-line-height);
+  }
+  #gutterInner { padding: 12px 5px 12px 0; min-width: 52px; }
+  .gutter-line, #hl .code-line { height: var(--editor-line-height); line-height: var(--editor-line-height); white-space: pre; }
+  #hl .code-line { display: block; }
+  .gutter-line { display: flex; align-items: center; justify-content: flex-end; gap: 2px; }
+  .fold-toggle, .fold-placeholder { width: 16px; height: var(--editor-line-height); flex: none; }
+  .fold-toggle {
+    border: 0; background: transparent; color: var(--text); cursor: pointer; padding: 0;
+    font: inherit; font-size: 14px; font-weight: 700; line-height: var(--editor-line-height); text-align: center;
+  }
+  .fold-toggle:hover { color: var(--primary); background: var(--hover); }
+  .line-num { min-width: 24px; text-align: right; }
   #hl {
-    position: absolute; inset: 0; margin: 0; padding: 12px 14px; border: none;
-    font-family: var(--mono); font-size: 12.5px; line-height: 1.65;
+    position: absolute; inset: 0; margin: 0; padding: 12px 14px 12px 64px; border: none;
+    font-family: var(--mono); font-size: 12.5px; line-height: var(--editor-line-height);
     white-space: pre; overflow: hidden; pointer-events: none; color: var(--text);
     tab-size: 2; background: transparent; z-index: 0;
   }
   #hl code { font: inherit; }
   #jsonInput {
     flex: 1; min-width: 0; min-height: 0; border: none; outline: none; resize: none;
-    padding: 12px 14px; font-family: var(--mono); font-size: 12.5px; line-height: 1.65;
+    padding: 12px 14px 12px 64px; font-family: var(--mono); font-size: 12.5px; line-height: var(--editor-line-height);
     background: transparent; color: transparent; caret-color: var(--primary);
     tab-size: 2; position: relative; z-index: 1;
   }
+  .editor.is-folded #jsonInput { opacity: 0; pointer-events: none; }
+  .editor.is-folded #hl { z-index: 1; overflow: auto; pointer-events: auto; }
   #jsonInput::placeholder { color: var(--muted); }
   #jsonInput::selection { background: rgba(37, 99, 235, .3); }
   .j-key { color: #b45309; }
@@ -179,7 +204,17 @@
     position: sticky; top: 0; z-index: 2; background: var(--thead-bg);
     font-weight: 600; cursor: pointer; user-select: none; border-bottom: 1px solid var(--border);
   }
+  /* 嵌套字段：完整层级放在上行，叶子字段名单独作为可排序表头。 */
+  .grid thead .path-row th {
+    top: 0; z-index: 4; padding-top: 4px; padding-bottom: 4px;
+    color: var(--primary); font-family: var(--mono); font-size: 11px; font-weight: 500;
+    cursor: default; border-bottom: none;
+  }
+  .grid thead .field-row th { top: 27px; z-index: 3; }
+  .grid thead .path-row th.idx { z-index: 5; }
+  .grid thead .field-row th.idx { z-index: 4; }
   .grid thead th:hover { color: var(--primary); }
+  .grid thead .path-row th:hover { color: var(--primary); }
   .grid thead th.sorted { color: var(--primary); }
   .grid .th-arrow { font-size: 10px; margin-left: 3px; }
   .grid .th-gap { display: inline-block; width: 12px; }
@@ -329,8 +364,9 @@
 
 <main class="main" id="main">
   <section class="pane pane-left" id="paneLeft">
-    <div class="pane-head">JSON 输入</div>
-    <div class="editor">
+    <div class="pane-head">JSON 输入 <span class="editor-actions"><button class="editor-action" id="btnFoldAll" title="收起全部可折叠层级">收起</button><button class="editor-action" id="btnUnfoldAll" title="展开全部层级">展开</button></span></div>
+    <div class="editor" id="jsonEditor">
+      <div class="editor-gutter" id="gutter"><div id="gutterInner"></div></div>
       <pre id="hl" aria-hidden="true"><code id="hlCode"></code></pre>
       <textarea id="jsonInput" spellcheck="false" wrap="off" placeholder='在此粘贴 JSON，例如：[{"名称":"张三","年龄":28}]&#10;也可以直接把 .json 文件拖进这个框'></textarea>
     </div>
@@ -459,14 +495,67 @@ function highlightJson(text) {
 
 const HL_PLAIN_LIMIT = 300000;   // 超大文本放弃着色，避免输入卡顿
 let hlLast = null;
-function refreshHighlight() {
-  const ta = $('jsonInput'), code = $('hlCode');
+const foldedLines = new Set();
+
+/* 找出跨行的 {…} / […]，只在 JSON 字符串外识别括号。 */
+function foldRanges(text) {
+  const ranges = new Map(), stack = [];
+  let inString = false, escaped = false, line = 0;
+  for (let i = 0; i < text.length; i++) {
+    const ch = text[i];
+    if (inString) {
+      if (escaped) escaped = false;
+      else if (ch === '\\') escaped = true;
+      else if (ch === '"') inString = false;
+    } else if (ch === '"') {
+      inString = true;
+    } else if (ch === '{' || ch === '[') {
+      stack.push({ open: ch, line });
+    } else if (ch === '}' || ch === ']') {
+      const expected = ch === '}' ? '{' : '[';
+      const open = stack.pop();
+      if (open && open.open === expected && open.line < line) ranges.set(open.line, { end: line, close: ch });
+    }
+    if (ch === '\n') line++;
+  }
+  return ranges;
+}
+
+function syncGutter(scrollTop) {
+  // textarea 出现横向滚动条时，实际可视高度会略小于 gutter。
+  // 行号的位移不能超过自身内容高度，否则末行会提前上移、被截断。
+  const gutter = $('gutter');
+  const gutterScrollTop = Math.min(scrollTop, Math.max(0, gutter.scrollHeight - gutter.clientHeight));
+  $('gutterInner').style.transform = `translateY(${-gutterScrollTop}px)`;
+}
+
+function refreshHighlight(force = false) {
+  const ta = $('jsonInput'), code = $('hlCode'), editor = $('jsonEditor');
   const text = ta.value;
-  if (text === hlLast) return;
+  if (!force && text === hlLast) return;
+  if (text !== hlLast) foldedLines.clear();
   hlLast = text;
-  if (!text) { code.textContent = ''; return; }
-  if (text.length > HL_PLAIN_LIMIT) { code.textContent = text; return; }
-  code.innerHTML = highlightJson(text) + '\n';
+
+  const lines = text ? text.split('\n') : [''];
+  const ranges = text.length <= HL_PLAIN_LIMIT ? foldRanges(text) : new Map();
+  for (const start of [...foldedLines]) if (!ranges.has(start)) foldedLines.delete(start);
+
+  const codeLines = [], gutterLines = [];
+  for (let line = 0; line < lines.length;) {
+    const range = ranges.get(line);
+    const folded = !!range && foldedLines.has(line);
+    const shown = folded ? lines[line].replace(/[ \t]+$/, '') + ' … ' + range.close : lines[line];
+    codeLines.push(`<span class="code-line">${text.length > HL_PLAIN_LIMIT ? esc(shown) : highlightJson(shown) || ' '}</span>`);
+    const control = range
+      ? `<button class="fold-toggle" data-fold-line="${line}" title="${folded ? '展开此层级' : '收起此层级'}" aria-label="${folded ? '展开' : '收起'}第 ${line + 1} 行">${folded ? '▸' : '▾'}</button>`
+      : '<span class="fold-placeholder"></span>';
+    gutterLines.push(`<div class="gutter-line">${control}<span class="line-num">${line + 1}</span></div>`);
+    line = folded ? range.end + 1 : line + 1;
+  }
+  code.innerHTML = codeLines.join('');
+  $('gutterInner').innerHTML = gutterLines.join('');
+  editor.classList.toggle('is-folded', foldedLines.size > 0);
+  syncGutter(editor.classList.contains('is-folded') ? $('hl').scrollTop : ta.scrollTop);
 }
 
 function flattenInto(v, prefix, out) {
@@ -506,6 +595,29 @@ function buildColumns(effectiveRows) {
     }
   }
   return cols;
+}
+
+function columnLabel(col) {
+  const dot = col.lastIndexOf('.');
+  return dot === -1 ? (col || '值') : col.slice(dot + 1);
+}
+
+function columnParent(col) {
+  const dot = col.lastIndexOf('.');
+  return dot === -1 ? '顶层字段' : col.slice(0, dot);
+}
+
+/* 相邻同层级列合并为一格：层级在上、字段名在下，避免每列重复完整路径。 */
+function pathHeaderHTML(cols) {
+  let html = '<tr class="path-row"><th class="idx" aria-label="行号"></th>';
+  for (let i = 0; i < cols.length;) {
+    const parent = columnParent(cols[i]);
+    let end = i + 1;
+    while (end < cols.length && columnParent(cols[end]) === parent) end++;
+    html += `<th colspan="${end - i}" title="${escAttr(parent)}">${esc(parent)}</th>`;
+    i = end;
+  }
+  return html + '</tr>';
 }
 
 function describeError(e, text) {
@@ -709,8 +821,8 @@ function renderCellLayered(v, term) {
 function layeredSubTable(arr) {
   const items = arr.map(it => isObj(it) ? flattenRow(it) : { '值': it });
   const cols = buildColumns(items);
-  let html = '<table class="grid sub"><thead><tr><th class="idx">#</th>';
-  for (const c of cols) html += `<th title="${escAttr(c)}">${esc(c)}</th>`;
+  let html = '<table class="grid sub"><thead>' + pathHeaderHTML(cols) + '<tr class="field-row"><th class="idx">#</th>';
+  for (const c of cols) html += `<th title="${escAttr(c)}">${esc(columnLabel(c))}</th>`;
   html += '</tr></thead><tbody>';
   items.forEach((item, i) => {
     const val = c => Object.prototype.hasOwnProperty.call(item, c) ? item[c] : undefined;
@@ -765,11 +877,11 @@ function renderTable() {
   const numCols = new Set(view.cols.filter(c =>
     view.idxs.every(i => { const v = getVal(i, c); return v === undefined || v === null || typeof v === 'number'; })));
 
-  let html = '<thead><tr><th class="idx">#</th>';
+  let html = '<thead>' + pathHeaderHTML(view.cols) + '<tr class="field-row"><th class="idx">#</th>';
   for (const c of view.cols) {
     const sorted = state.sort.col === c;
     const arrow = sorted ? `<span class="th-arrow">${state.sort.dir === 1 ? '▲' : '▼'}</span>` : '<span class="th-gap"></span>';
-    html += `<th${numCols.has(c) ? ' class="num-cell' + (sorted ? ' sorted' : '') + '"' : (sorted ? ' class="sorted"' : '')} data-col="${escAttr(c)}" title="${escAttr(c)}">${esc(c)}${arrow}</th>`;
+    html += `<th${numCols.has(c) ? ' class="num-cell' + (sorted ? ' sorted' : '') + '"' : (sorted ? ' class="sorted"' : '')} data-col="${escAttr(c)}" title="${escAttr(c)}">${esc(columnLabel(c))}${arrow}</th>`;
   }
   html += '</tr></thead><tbody>';
   if (state.mode === 'layered') {
@@ -1070,6 +1182,28 @@ $('jsonInput').addEventListener('scroll', () => {
   const ta = $('jsonInput'), hl = $('hl');
   hl.scrollTop = ta.scrollTop;
   hl.scrollLeft = ta.scrollLeft;
+  syncGutter(ta.scrollTop);
+});
+
+// JSON gutter：单层收起 / 展开，以及全量操作。
+$('gutter').addEventListener('click', e => {
+  const btn = e.target.closest('.fold-toggle[data-fold-line]');
+  if (!btn) return;
+  const line = +btn.dataset.foldLine;
+  if (foldedLines.has(line)) foldedLines.delete(line); else foldedLines.add(line);
+  refreshHighlight(true);
+});
+$('btnFoldAll').addEventListener('click', () => {
+  for (const line of foldRanges($('jsonInput').value).keys()) foldedLines.add(line);
+  refreshHighlight(true);
+});
+$('btnUnfoldAll').addEventListener('click', () => {
+  foldedLines.clear();
+  refreshHighlight(true);
+  $('jsonInput').focus();
+});
+$('hl').addEventListener('scroll', () => {
+  if ($('jsonEditor').classList.contains('is-folded')) syncGutter($('hl').scrollTop);
 });
 
 // 搜索
