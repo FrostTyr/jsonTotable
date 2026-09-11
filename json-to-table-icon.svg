@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" role="img" aria-labelledby="title">
+  <title>JSON 转表格</title>
+  <rect x="4" y="4" width="120" height="120" rx="28" fill="#2563eb"/>
+  <path fill="#fff" d="M38 26h-7c-8 0-13 6-13 14v12c0 6-3 9-8 12 5 3 8 6 8 12v12c0 8 5 14 13 14h7v-9h-5c-3 0-5-2-5-5V76c0-6-3-10-8-12 5-2 8-6 8-12V40c0-3 2-5 5-5h5z"/>
+  <path fill="#fff" d="M90 26h7c8 0 13 6 13 14v12c0 6 3 9 8 12-5 3-8 6-8 12v12c0 8-5 14-13 14h-7v-9h5c3 0 5-2 5-5V76c0-6 3-10 8-12-5-2-8-6-8-12V40c0-3-2-5-5-5h-5z"/>
+  <g fill="#fff">
+    <rect x="43" y="44" width="42" height="9" rx="4.5"/>
+    <rect x="43" y="60" width="42" height="9" rx="4.5"/>
+    <rect x="43" y="76" width="42" height="9" rx="4.5"/>
+  </g>
+</svg>
