@@ -92,7 +92,8 @@
     background: var(--panel); border: 1px solid var(--border); border-radius: 10px;
     display: flex; flex-direction: column; overflow: hidden; min-width: 0;
   }
-  .pane-left { width: 38%; min-width: 240px; flex: none; }
+  /* 初始即为拖拽允许的最窄比例；小屏仍保留 240px 的可用输入宽度。 */
+  .pane-left { width: 22%; min-width: 240px; flex: none; }
   .pane-left.dragover { outline: 2px dashed var(--primary); outline-offset: -4px; }
   .divider {
     width: 16px; flex: none; cursor: col-resize; display: flex;
