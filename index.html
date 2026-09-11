@@ -1,0 +1,1321 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>JSON → 表格</title>
+<style>
+  :root {
+    --bg: #f1f5f9; --panel: #ffffff; --border: #e2e8f0; --text: #0f172a;
+    --muted: #94a3b8; --primary: #2563eb; --thead-bg: #f1f5f9;
+    --hover: #eff6ff; --zebra: #f8fafc; --mark: #fde047;
+    --error: #dc2626; --error-bg: #fef2f2; --success: #16a34a;
+    --code-bg: #f1f5f9; --shadow: 0 12px 32px rgba(15, 23, 42, .16);
+    --mono: "SF Mono", "JetBrains Mono", Menlo, Consolas, "Courier New", monospace;
+  }
+  html[data-theme="dark"] {
+    --bg: #0b1220; --panel: #16213a; --border: #2c3a55; --text: #e2e8f0;
+    --muted: #64748b; --primary: #60a5fa; --thead-bg: #1c2a47;
+    --hover: #20304f; --zebra: #1a2740; --mark: #a16207;
+    --error: #f87171; --error-bg: #3b1d1d; --success: #4ade80;
+    --code-bg: #0f1a30; --shadow: 0 12px 32px rgba(0, 0, 0, .55);
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; }
+  body {
+    margin: 0; display: flex; flex-direction: column;
+    font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", "Segoe UI", sans-serif;
+    font-size: 13px; background: var(--bg); color: var(--text);
+  }
+  .mono { font-family: var(--mono); }
+  .spacer { flex: 1; }
+
+  /* ── 顶部栏 ── */
+  .topbar {
+    height: 52px; flex: none; display: flex; align-items: center; gap: 10px;
+    padding: 0 16px; background: var(--panel); border-bottom: 1px solid var(--border);
+  }
+  .logo { display: flex; align-items: center; gap: 9px; font-weight: 700; font-size: 15px; }
+  .logo .icon {
+    width: 24px; height: 24px; border-radius: 6px; background: var(--primary); color: #fff;
+    display: flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 700;
+    font-family: var(--mono);
+  }
+  .icon-btn {
+    width: 30px; height: 30px; border-radius: 7px; border: 1px solid var(--border);
+    background: var(--panel); color: var(--text); cursor: pointer; font-size: 14px;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .icon-btn:hover { border-color: var(--primary); color: var(--primary); }
+
+  /* ── 状态 / 操作条 ── */
+  .statusbar {
+    height: 44px; flex: none; display: flex; align-items: center; gap: 8px;
+    padding: 0 16px; background: var(--panel); border-bottom: 1px solid var(--border);
+  }
+  .status { display: flex; align-items: center; gap: 7px; min-width: 0; }
+  .status .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--muted); flex: none; }
+  .status.ok .dot { background: var(--success); }
+  .status.error .dot { background: var(--error); }
+  #statusText {
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--text);
+  }
+  .status.error #statusText { color: var(--error); }
+  .btn {
+    border: 1px solid var(--border); background: var(--panel); color: var(--text);
+    border-radius: 6px; padding: 5px 12px; font-size: 12.5px; cursor: pointer; line-height: 1.4;
+    white-space: nowrap;
+  }
+  .btn:hover { border-color: var(--primary); color: var(--primary); }
+  .btn.primary { background: var(--primary); border-color: var(--primary); color: #fff; }
+  .btn.primary:hover { opacity: .9; }
+  .btn[hidden] { display: none; }
+  .auto-wrap {
+    display: flex; align-items: center; gap: 6px; font-size: 12.5px; color: var(--muted);
+    user-select: none; white-space: nowrap;
+  }
+  .switch {
+    appearance: none; -webkit-appearance: none; width: 34px; height: 18px; border-radius: 9px;
+    background: var(--border); position: relative; cursor: pointer; transition: background .15s;
+    margin: 0; flex: none;
+  }
+  .switch::after {
+    content: ""; position: absolute; top: 2px; left: 2px; width: 14px; height: 14px;
+    border-radius: 50%; background: #fff; transition: left .15s; box-shadow: 0 1px 2px rgba(0,0,0,.25);
+  }
+  .switch:checked { background: var(--primary); }
+  .switch:checked::after { left: 18px; }
+
+  /* ── 主区左右分栏 ── */
+  .main { flex: 1; display: flex; min-height: 0; padding: 12px; }
+  .pane {
+    background: var(--panel); border: 1px solid var(--border); border-radius: 10px;
+    display: flex; flex-direction: column; overflow: hidden; min-width: 0;
+  }
+  .pane-left { width: 38%; min-width: 240px; flex: none; }
+  .pane-left.dragover { outline: 2px dashed var(--primary); outline-offset: -4px; }
+  .divider {
+    width: 16px; flex: none; cursor: col-resize; display: flex;
+    align-items: center; justify-content: center; touch-action: none;
+  }
+  .divider::after {
+    content: ""; width: 4px; height: 36px; border-radius: 2px; background: var(--border);
+  }
+  .divider:hover::after, .divider.active::after { background: var(--primary); }
+  .pane-right { flex: 1; }
+  .pane-head {
+    height: 38px; flex: none; display: flex; align-items: center; padding: 0 12px;
+    border-bottom: 1px solid var(--border); font-size: 12.5px; color: var(--muted); gap: 8px;
+  }
+  .pane-foot {
+    height: 30px; flex: none; display: flex; align-items: center; gap: 12px;
+    padding: 0 12px; border-top: 1px solid var(--border); font-size: 11.5px; color: var(--muted);
+    white-space: nowrap; overflow: hidden;
+  }
+  /* ── JSON 编辑器：textarea + 高亮层叠加 ── */
+  .editor { position: relative; flex: 1; min-height: 0; display: flex; }
+  #hl {
+    position: absolute; inset: 0; margin: 0; padding: 12px 14px; border: none;
+    font-family: var(--mono); font-size: 12.5px; line-height: 1.65;
+    white-space: pre; overflow: hidden; pointer-events: none; color: var(--text);
+    tab-size: 2; background: transparent; z-index: 0;
+  }
+  #hl code { font: inherit; }
+  #jsonInput {
+    flex: 1; min-width: 0; min-height: 0; border: none; outline: none; resize: none;
+    padding: 12px 14px; font-family: var(--mono); font-size: 12.5px; line-height: 1.65;
+    background: transparent; color: transparent; caret-color: var(--primary);
+    tab-size: 2; position: relative; z-index: 1;
+  }
+  #jsonInput::placeholder { color: var(--muted); }
+  #jsonInput::selection { background: rgba(37, 99, 235, .3); }
+  .j-key { color: #b45309; }
+  .j-str { color: #15803d; }
+  .j-num { color: #2563eb; }
+  .j-true { color: #15803d; }
+  .j-false { color: #dc2626; }
+  .j-null { color: #94a3b8; font-style: italic; }
+  .j-punct { color: #94a3b8; }
+  html[data-theme="dark"] .j-key { color: #eab308; }
+  html[data-theme="dark"] .j-str, html[data-theme="dark"] .j-true { color: #4ade80; }
+  html[data-theme="dark"] .j-num { color: #93c5fd; }
+  html[data-theme="dark"] .j-false { color: #f87171; }
+  html[data-theme="dark"] .j-null, html[data-theme="dark"] .j-punct { color: #64748b; }
+
+  /* ── 表格工具栏 ── */
+  .table-toolbar {
+    min-height: 44px; flex: none; display: flex; align-items: center; gap: 8px;
+    padding: 6px 12px; border-bottom: 1px solid var(--border); flex-wrap: wrap;
+  }
+  .search-box {
+    display: flex; align-items: center; gap: 6px; border: 1px solid var(--border);
+    border-radius: 6px; padding: 4px 9px; flex: 0 1 210px; min-width: 130px;
+  }
+  .search-box:focus-within { border-color: var(--primary); }
+  .search-box input {
+    border: none; outline: none; background: transparent; color: var(--text);
+    font-size: 12.5px; width: 100%; padding: 0;
+  }
+  .check-label {
+    display: flex; align-items: center; gap: 6px; font-size: 12.5px;
+    color: var(--muted); user-select: none; cursor: pointer; white-space: nowrap;
+  }
+  .check-label input { accent-color: var(--primary); margin: 0; }
+  .seg { display: flex; border: 1px solid var(--border); border-radius: 6px; overflow: hidden; flex: none; }
+  .seg label {
+    display: flex; align-items: center; padding: 4px 10px; font-size: 12px;
+    color: var(--muted); cursor: pointer; user-select: none; white-space: nowrap;
+  }
+  .seg label + label { border-left: 1px solid var(--border); }
+  .seg label.on { background: var(--primary); color: #fff; }
+  .seg input { display: none; }
+
+  /* ── 表格 ── */
+  .table-wrap { flex: 1; min-height: 0; overflow: auto; position: relative; }
+  table.grid { border-collapse: separate; border-spacing: 0; width: 100%; font-size: 12.5px; }
+  .grid th, .grid td {
+    padding: 7px 12px; text-align: left; white-space: nowrap;
+    border-bottom: 1px solid var(--border);
+  }
+  .grid thead th {
+    position: sticky; top: 0; z-index: 2; background: var(--thead-bg);
+    font-weight: 600; cursor: pointer; user-select: none; border-bottom: 1px solid var(--border);
+  }
+  .grid thead th:hover { color: var(--primary); }
+  .grid thead th.sorted { color: var(--primary); }
+  .grid .th-arrow { font-size: 10px; margin-left: 3px; }
+  .grid .th-gap { display: inline-block; width: 12px; }
+  .grid td.idx, .grid th.idx { position: sticky; left: 0; color: var(--muted); text-align: right; }
+  .grid thead th.idx { z-index: 3; }
+  .grid tbody td.idx { z-index: 1; background: var(--panel); }
+  .grid tbody tr:nth-child(even) td { background: var(--zebra); }
+  .grid tbody tr td.idx { background: var(--panel); }
+  .grid tbody tr:hover td { background: var(--hover); }
+  .grid td.num-cell, .grid th.num-cell { text-align: right; }
+  .grid td.num-cell { font-family: var(--mono); }
+
+  .celltext {
+    display: inline-block; max-width: 46ch; overflow: hidden;
+    text-overflow: ellipsis; vertical-align: bottom;
+  }
+  mark { background: var(--mark); color: inherit; border-radius: 2px; padding: 0 1px; }
+  .null { color: var(--muted); font-style: italic; }
+  .missing { color: var(--muted); }
+  .bool-true { color: var(--success); font-family: var(--mono); }
+  .bool-false { color: var(--error); font-family: var(--mono); }
+  .badge {
+    display: inline-flex; align-items: center; gap: 5px; border: 1px solid var(--border);
+    background: var(--code-bg); border-radius: 5px; padding: 1px 8px; font-size: 11.5px;
+    cursor: pointer; color: var(--primary); font-family: var(--mono); line-height: 1.5;
+  }
+  .badge:hover { border-color: var(--primary); }
+
+  /* ── 分层展开：行下方独立子表 ── */
+  #grid.layered > tbody > tr:nth-child(even) > td { background: var(--panel); }
+  #grid > tbody > tr.layer-tr > td {
+    background: var(--bg) !important; padding: 0 10px 10px 34px;
+  }
+  .subsec {
+    border: 1px solid var(--border); border-radius: 8px; overflow: hidden;
+    background: var(--panel); margin: 4px 0 2px; min-width: 280px; max-width: fit-content;
+  }
+  .subcap {
+    font-size: 11.5px; color: var(--primary); padding: 5px 12px; font-family: var(--mono);
+    background: var(--code-bg); border-bottom: 1px solid var(--border);
+  }
+  table.grid.sub { font-size: 11.5px; }
+  .subhint { color: var(--muted); font-size: 11.5px; }
+
+  /* ── 单元格选区与复制 ── */
+  td.cell-sel {
+    background: rgba(37, 99, 235, .16) !important;
+    box-shadow: inset 0 0 0 1px var(--primary);
+  }
+
+  /* ── 空状态 ── */
+  .empty {
+    position: absolute; inset: 0; display: flex; flex-direction: column;
+    align-items: center; justify-content: center; gap: 8px; color: var(--muted);
+    padding: 20px; text-align: center;
+  }
+  .empty[hidden] { display: none; }
+  .empty-icon { font-family: var(--mono); font-size: 34px; opacity: .45; }
+  .empty-title { font-size: 14px; color: var(--text); font-weight: 600; }
+  .empty-sub { font-size: 12px; }
+
+  /* ── 浮层（嵌套展开 / 列菜单） ── */
+  .popover {
+    position: fixed; z-index: 1000; background: var(--panel); border: 1px solid var(--border);
+    border-radius: 10px; box-shadow: var(--shadow); max-width: min(620px, 92vw);
+    max-height: 62vh; display: flex; flex-direction: column; overflow: hidden;
+  }
+  .popover-head {
+    display: flex; align-items: center; gap: 14px; padding: 8px 8px 8px 14px;
+    border-bottom: 1px solid var(--border); flex: none;
+  }
+  .popover-head .ptitle {
+    font-weight: 600; font-size: 12.5px; overflow: hidden; text-overflow: ellipsis;
+    white-space: nowrap; font-family: var(--mono);
+  }
+  .pclose {
+    border: none; background: transparent; color: var(--muted); cursor: pointer; font-size: 12px;
+    width: 22px; height: 22px; border-radius: 5px; flex: none;
+  }
+  .pclose:hover { background: var(--code-bg); color: var(--text); }
+  .popover-body { overflow: auto; }
+  .menu-actions { display: flex; gap: 8px; padding: 8px 14px; border-bottom: 1px solid var(--border); }
+  .menu-actions button {
+    border: none; background: transparent; color: var(--primary); cursor: pointer;
+    font-size: 12px; padding: 2px 4px;
+  }
+  .menu-item {
+    display: flex; align-items: center; gap: 8px; padding: 6px 14px; font-size: 12.5px;
+    cursor: pointer; white-space: nowrap;
+  }
+  .menu-item:hover { background: var(--hover); }
+  .menu-item input { accent-color: var(--primary); margin: 0; }
+  .menu-item .mono { max-width: 40ch; overflow: hidden; text-overflow: ellipsis; }
+
+  /* ── 帮助弹窗 ── */
+  .modal-backdrop {
+    position: fixed; inset: 0; background: rgba(9, 14, 26, .5); z-index: 2000;
+    display: flex; align-items: center; justify-content: center; padding: 20px;
+  }
+  .modal-backdrop[hidden] { display: none; }
+  .modal {
+    background: var(--panel); border: 1px solid var(--border); border-radius: 12px;
+    width: min(560px, 94vw); max-height: 80vh; overflow: auto; padding: 22px 24px;
+  }
+  .modal h3 { margin: 0 0 14px; font-size: 15px; }
+  .modal ul { margin: 0; padding-left: 18px; line-height: 1.9; font-size: 12.5px; color: var(--text); }
+  .modal ul li b { color: var(--primary); font-weight: 600; }
+  .modal .modal-close { margin-top: 16px; }
+
+  /* ── Toast ── */
+  #toast {
+    position: fixed; left: 50%; bottom: 30px; transform: translateX(-50%) translateY(10px);
+    background: var(--text); color: var(--bg); padding: 8px 18px; border-radius: 8px;
+    font-size: 12.5px; opacity: 0; pointer-events: none; transition: all .18s; z-index: 3000;
+  }
+  #toast.show { opacity: 1; transform: translateX(-50%); }
+
+  /* ── 窄屏：上下布局 ── */
+  @media (max-width: 900px) {
+    .main { flex-direction: column; }
+    .pane-left { width: auto !important; height: 38%; min-width: 0; flex: none; }
+    .divider { display: none; }
+    .statusbar { flex-wrap: wrap; height: auto; padding: 6px 12px; }
+  }
+</style>
+</head>
+<body>
+
+<header class="topbar">
+  <div class="logo"><span class="icon">{ }</span> JSON → 表格</div>
+  <div class="spacer"></div>
+  <button class="icon-btn" id="btnHelp" title="使用帮助">?</button>
+  <button class="icon-btn" id="btnTheme" title="切换亮色 / 暗色主题">🌙</button>
+</header>
+
+<div class="statusbar">
+  <span class="status" id="status"><span class="dot"></span><span id="statusText">等待输入 JSON…</span></span>
+  <div class="spacer"></div>
+  <button class="btn" id="btnSample">示例</button>
+  <button class="btn" id="btnFormat">格式化</button>
+  <button class="btn" id="btnClear">清空</button>
+  <label class="auto-wrap" title="开启后粘贴 JSON 自动转换，无需点击按钮">
+    自动转换 <input type="checkbox" id="autoConvert" class="switch" checked>
+  </label>
+  <button class="btn primary" id="btnConvert" hidden>转换</button>
+</div>
+
+<main class="main" id="main">
+  <section class="pane pane-left" id="paneLeft">
+    <div class="pane-head">JSON 输入</div>
+    <div class="editor">
+      <pre id="hl" aria-hidden="true"><code id="hlCode"></code></pre>
+      <textarea id="jsonInput" spellcheck="false" wrap="off" placeholder='在此粘贴 JSON，例如：[{"名称":"张三","年龄":28}]&#10;也可以直接把 .json 文件拖进这个框'></textarea>
+    </div>
+    <div class="pane-foot"><span id="charCount">0 字符</span><span>支持拖入 .json 文件</span></div>
+  </section>
+  <div class="divider" id="divider" title="拖动调整两侧宽度"></div>
+  <section class="pane pane-right">
+    <div class="table-toolbar">
+      <div class="search-box"><span>🔍</span><input id="searchInput" type="text" placeholder="搜索全部字段…"></div>
+      <button class="btn" id="btnCols">列 ▾</button>
+      <div class="seg" id="viewModeSeg" title="展示模式：分层展开=数组显示为行下方独立子表·对象拆点号列；拍平列=仅对象拆列；徽标=紧凑视图">
+        <label data-mode="layered" class="on">分层展开<input type="radio" name="viewMode" value="layered" checked></label>
+        <label data-mode="flatten">拍平列<input type="radio" name="viewMode" value="flatten"></label>
+        <label data-mode="badge">徽标<input type="radio" name="viewMode" value="badge"></label>
+      </div>
+      <div class="spacer"></div>
+      <button class="btn" id="btnCopyTsv" title="复制后可直接粘贴进 Excel / WPS / 飞书表格">复制 TSV</button>
+      <button class="btn" id="btnCopyMd">复制 Markdown</button>
+      <button class="btn" id="btnCsv">导出 CSV</button>
+    </div>
+    <div class="table-wrap" id="tableWrap">
+      <table class="grid" id="grid"></table>
+      <div class="empty" id="emptyState">
+        <div class="empty-icon">{ }</div>
+        <div class="empty-title" id="emptyTitle">在左侧粘贴 JSON，表格将实时生成</div>
+        <div class="empty-sub">支持对象数组、单对象与嵌套结构 · 数据仅在本地浏览器处理，不会上传</div>
+        <button class="btn" id="btnSample2">填入示例</button>
+      </div>
+    </div>
+    <div class="pane-foot"><span id="tableStats">—</span></div>
+  </section>
+</main>
+
+<div class="modal-backdrop" id="helpModal" hidden>
+  <div class="modal">
+    <h3>使用帮助</h3>
+    <ul>
+      <li><b>自动转换</b>：粘贴 JSON 后约 0.3 秒自动生成表格；数据量大时可关闭开关，改用「转换」按钮。</li>
+      <li><b>支持格式</b>：对象数组（最常用）、单个对象（自动作为一行）；各行字段不一致时自动取字段的并集，缺失显示 —。</li>
+      <li><b>展示模式</b>：「分层展开」（默认）保持数据结构——主表一行一条记录，嵌套对象拆成 a.b.c 点号列，嵌套数组在对应行下方显示为<b>独立的子表格</b>（各自有表头，可多层嵌套）；「拍平列」只拆对象、数组保留徽标；「徽标」为紧凑视图，点击 <span class="badge" style="cursor:default">{ } n 字段</span> / <span class="badge" style="cursor:default">[•] n 项</span> 徽标可弹出子表格（可多层递归）。</li>
+      <li><b>语法高亮</b>：左侧 JSON 输入框带语法着色——键、字符串、数字、true/false/null、符号各用不同颜色（亮 / 暗主题各一套），输入过程中实时刷新，与 JSON 是否合法无关。</li>
+      <li><b>排序与搜索</b>：点击列头切换 升序 / 降序 / 取消；搜索框实时过滤行并高亮命中。</li>
+      <li><b>单元格复制</b>：双击单元格复制其内容。</li>
+      <li><b>框选复制</b>：在表格里按住鼠标拖动，可像 Excel 一样选中连续的矩形区域（跨行时中间的子表行自动跳过）；松开后按 Ctrl / ⌘ + C 复制选区（TSV，可直接粘贴进 Excel / 飞书表格）；点击表格以外区域或按 Esc 取消选区（焦点在 JSON 输入框时 Ctrl / ⌘ + C 复制的是输入框里选中的文本）。</li>
+      <li><b>列控制</b>：「列 ▾」可隐藏 / 显示指定列。</li>
+      <li><b>复制与导出</b>：复制 TSV 可直接粘贴进 Excel / WPS / 飞书表格；复制 Markdown 用于文档；导出 CSV 自带 BOM，Excel 打开不乱码。</li>
+      <li><b>隐私</b>：全部转换在浏览器本地完成，无任何网络请求。</li>
+    </ul>
+    <div style="text-align:right"><button class="btn primary modal-close" id="btnHelpClose">知道了</button></div>
+  </div>
+</div>
+
+<div id="toast"></div>
+
+<script>
+'use strict';
+
+/* ══════════════ 状态 ══════════════ */
+const state = {
+  rows: [],        // 规范化后的行（全部为对象）
+  flatRows: [],    // 拍平后的行（拍平模式下使用）
+  columns: [],     // 当前列（普通模式为顶层键，拍平模式为 a.b.c 路径）
+  error: null,
+  hasData: false,
+  sort: { col: null, dir: 0 },   // dir: 1 升 / -1 降 / 0 无
+  search: '',
+  hiddenCols: new Set(),
+  mode: 'layered',   // layered=分层展开（行下方独立子表）| flatten=拍平列 | badge=徽标紧凑
+  autoConvert: true,
+};
+let convertTimer = null;
+
+const $ = id => document.getElementById(id);
+const grid = $('grid');
+const popovers = [];   // 浮层栈（嵌套子表 / 列菜单）
+
+/* ══════════════ 纯逻辑函数 ══════════════ */
+const isObj = v => v !== null && typeof v === 'object' && !Array.isArray(v);
+
+function esc(s) {
+  return String(s).replace(/[&<>"']/g, c =>
+    ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+}
+
+function escAttr(s) { return esc(s); }
+
+function highlight(raw, term) {
+  const s = String(raw);
+  if (!term) return esc(s);
+  const t = term.toLowerCase();
+  const lower = s.toLowerCase();
+  let out = '', i = 0;
+  for (;;) {
+    const idx = lower.indexOf(t, i);
+    if (idx === -1) { out += esc(s.slice(i)); break; }
+    out += esc(s.slice(i, idx)) + '<mark>' + esc(s.slice(idx, idx + t.length)) + '</mark>';
+    i = idx + t.length;
+  }
+  return out;
+}
+
+/* JSON 语法着色：键（后随冒号的字符串）/ 字符串 / 数字 / true / false / null / 符号。
+   与 JSON 合法性无关，输入途中也会着色；不匹配的部分原样输出。 */
+const HL_RE = /("(?:\\.|[^"\\])*")(\s*:)?|-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?|\b(true|false|null)\b|([{}\[\],])/g;
+
+function highlightJson(text) {
+  let out = '', last = 0, m;
+  HL_RE.lastIndex = 0;
+  while ((m = HL_RE.exec(text))) {
+    out += esc(text.slice(last, m.index));
+    if (m[1] !== undefined) {
+      out += m[2] !== undefined
+        ? `<span class="j-key">${esc(m[1])}</span>${esc(m[2])}`
+        : `<span class="j-str">${esc(m[1])}</span>`;
+    } else if (m[3] !== undefined) {
+      out += `<span class="j-${m[3]}">${m[3]}</span>`;
+    } else if (m[4] !== undefined) {
+      out += `<span class="j-punct">${m[4]}</span>`;
+    } else {
+      out += `<span class="j-num">${esc(m[0])}</span>`;
+    }
+    last = HL_RE.lastIndex;
+  }
+  return out + esc(text.slice(last));
+}
+
+const HL_PLAIN_LIMIT = 300000;   // 超大文本放弃着色，避免输入卡顿
+let hlLast = null;
+function refreshHighlight() {
+  const ta = $('jsonInput'), code = $('hlCode');
+  const text = ta.value;
+  if (text === hlLast) return;
+  hlLast = text;
+  if (!text) { code.textContent = ''; return; }
+  if (text.length > HL_PLAIN_LIMIT) { code.textContent = text; return; }
+  code.innerHTML = highlightJson(text) + '\n';
+}
+
+function flattenInto(v, prefix, out) {
+  if (isObj(v)) {
+    const keys = Object.keys(v);
+    if (keys.length === 0) { out[prefix] = {}; return; }
+    for (const k of keys) flattenInto(v[k], prefix ? prefix + '.' + k : k, out);
+  } else {
+    out[prefix] = v;
+  }
+}
+
+function flattenRow(row) {
+  const out = {};
+  if (isObj(row)) flattenInto(row, '', out);
+  else out[''] = row;
+  return out;
+}
+
+function effectiveRows() {
+  if (state.mode === 'layered' || state.mode === 'flatten') return state.flatRows;
+  return state.rows;
+}
+
+function normalizeRows(parsed) {
+  const arr = Array.isArray(parsed) ? parsed : [parsed];
+  return arr.map(item => isObj(item) ? item : { '值': item });
+}
+
+function buildColumns(effectiveRows) {
+  const cols = [];
+  const seen = new Set();
+  for (const row of effectiveRows) {
+    if (!isObj(row)) continue;
+    for (const k of Object.keys(row)) {
+      if (!seen.has(k)) { seen.add(k); cols.push(k); }
+    }
+  }
+  return cols;
+}
+
+function describeError(e, text) {
+  let loc = '';
+  const m = /position\s+(\d+)/i.exec(e.message);
+  if (m) {
+    const pos = Math.min(+m[1], text.length);
+    const before = text.slice(0, pos);
+    const line = before.split('\n').length;
+    const col = pos - before.lastIndexOf('\n');
+    loc = `（第 ${line} 行第 ${col} 列）`;
+  }
+  return e.message + loc;
+}
+
+function searchText(v) {
+  if (v === undefined || v === null) return '';
+  if (isObj(v) || Array.isArray(v)) return JSON.stringify(v);
+  return String(v);
+}
+
+function cmpValues(a, b) {
+  let x = a, y = b;
+  if (isObj(x) || Array.isArray(x)) x = JSON.stringify(x);
+  if (isObj(y) || Array.isArray(y)) y = JSON.stringify(y);
+  if (typeof x === 'number' && typeof y === 'number') return x - y;
+  return String(x).localeCompare(String(y), 'zh-Hans-CN', { numeric: true, sensitivity: 'base' });
+}
+
+function effectiveRow(i) { return effectiveRows()[i]; }
+
+function getVal(i, col) {
+  const r = effectiveRow(i);
+  if (r === undefined || r === null) return undefined;
+  return Object.prototype.hasOwnProperty.call(r, col) ? r[col] : undefined;
+}
+
+/* 当前视图：可见列 + 过滤排序后的行索引（与界面显示一致，导出/复制复用） */
+function currentView() {
+  const cols = state.columns.filter(c => !state.hiddenCols.has(c));
+  const term = state.search.trim().toLowerCase();
+  let idxs = effectiveRows().map((_, i) => i);
+  if (term) {
+    idxs = idxs.filter(i => cols.some(c => searchText(getVal(i, c)).toLowerCase().includes(term)));
+  }
+  if (state.sort.col && state.sort.dir) {
+    const col = state.sort.col, dir = state.sort.dir;
+    idxs.sort((i1, i2) => {
+      const a = getVal(i1, col), b = getVal(i2, col);
+      const aN = a === undefined || a === null, bN = b === undefined || b === null;
+      if (aN && bN) return 0;
+      if (aN) return 1;          // 空值恒排最后，不受升降序影响
+      if (bN) return -1;
+      return dir * cmpValues(a, b);
+    });
+  }
+  return { cols, idxs, term };
+}
+
+function cellText(v) {
+  if (v === undefined) return '';
+  if (v === null) return 'null';
+  if (isObj(v) || Array.isArray(v)) return JSON.stringify(v);
+  return String(v);
+}
+
+function buildTsv(view) {
+  const lines = [view.cols.join('\t')];
+  for (const i of view.idxs) lines.push(view.cols.map(c => cellText(getVal(i, c))).join('\t'));
+  return lines.join('\n');
+}
+
+function buildMarkdown(view) {
+  const clean = s => String(s).replace(/\|/g, '\\|').replace(/\r?\n/g, ' ');
+  const lines = ['| ' + view.cols.map(clean).join(' | ') + ' |',
+                 '| ' + view.cols.map(() => '---').join(' | ') + ' |'];
+  for (const i of view.idxs) {
+    lines.push('| ' + view.cols.map(c => clean(cellText(getVal(i, c)))).join(' | ') + ' |');
+  }
+  return lines.join('\n');
+}
+
+function buildCsv(view) {
+  const q = s => {
+    const v = String(s);
+    return /[",\r\n]/.test(v) ? '"' + v.replace(/"/g, '""') + '"' : v;
+  };
+  const lines = [view.cols.map(q).join(',')];
+  for (const i of view.idxs) lines.push(view.cols.map(c => q(cellText(getVal(i, c)))).join(','));
+  return lines.join('\r\n');
+}
+
+/* ══════════════ 转换入口 ══════════════ */
+function convert() {
+  closeAllPopovers(false);   // 数据已变化，列菜单与子表浮层全部失效
+  const text = $('jsonInput').value.trim();
+  if (!text) {
+    state.hasData = false; state.rows = []; state.flatRows = []; state.columns = [];
+    state.error = null; resetSortAndCols();
+    render(); return;
+  }
+  let parsed;
+  try {
+    parsed = JSON.parse(text);
+  } catch (e) {
+    state.hasData = false; state.rows = []; state.flatRows = []; state.columns = [];
+    state.error = describeError(e, text);
+    resetSortAndCols();
+    render(); return;
+  }
+  state.error = null;
+  state.rows = normalizeRows(parsed);
+  state.hasData = true;
+  resetSortAndCols();
+  recomputeDerived();
+  render();
+}
+
+function resetSortAndCols() {
+  state.sort = { col: null, dir: 0 };
+  state.hiddenCols.clear();
+}
+
+function recomputeDerived() {
+  state.flatRows = state.rows.map(flattenRow);
+  state.columns = buildColumns(effectiveRows());
+}
+
+/* ══════════════ 渲染 ══════════════ */
+function render() {
+  updateStatus();
+  renderTable();
+  updateFooters();
+}
+
+function updateStatus() {
+  const el = $('status');
+  if (state.error) {
+    el.className = 'status error';
+    $('statusText').textContent = 'JSON 解析失败：' + state.error;
+  } else if (!state.hasData) {
+    el.className = 'status';
+    $('statusText').textContent = '等待输入 JSON…';
+  } else {
+    el.className = 'status ok';
+    let msg = `有效 JSON · ${state.rows.length} 条记录 · ${state.columns.length} 列`;
+    if (state.mode === 'layered') {
+      const countArrays = v => Array.isArray(v)
+        ? (v.length ? 1 : 0) + v.reduce((n, el) => n + countArrays(el), 0)
+        : (isObj(v) ? Object.values(v).reduce((n, el) => n + countArrays(el), 0) : 0);
+      const subs = state.rows.reduce((n, r) => n + countArrays(r), 0);
+      if (subs) msg += ` · ${subs} 个嵌套子表`;
+    }
+    $('statusText').textContent = msg;
+  }
+}
+
+function badgeHTML(path, v) {
+  const p = escAttr(JSON.stringify(path));
+  if (isObj(v)) {
+    const n = Object.keys(v).length;
+    return `<span class="badge" data-path="${p}" title="点击展开">${n ? `{ } ${n} 字段` : '{ } 空对象'}</span>`;
+  }
+  return `<span class="badge" data-path="${p}" title="点击展开">[•] ${v.length} 项</span>`;
+}
+
+/* 基础类型单元格（undefined/null/布尔/数字/字符串），徽标与分层模式共用。
+   data-copy 为复制用的原始文本，是双击复制与选区复制的数据源 */
+function primitiveCellHTML(v, term) {
+  const dc = ` data-copy="${escAttr(cellText(v))}"`;
+  if (v === undefined) return `<td${dc}><span class="missing">—</span></td>`;
+  if (v === null) return `<td${dc}><span class="null">null</span></td>`;
+  if (typeof v === 'boolean') return `<td class="${v ? 'bool-true' : 'bool-false'}"${dc}>${v}</td>`;
+  if (typeof v === 'number') return `<td class="num-cell"${dc}>${v}</td>`;
+  const s = String(v);
+  const text = s === '' ? '<span class="missing">""</span>' : highlight(s, term);
+  return `<td class="mono"${dc}><span class="celltext" title="${escAttr(s)}">${text}</span></td>`;
+}
+
+/* 单元格渲染（徽标 / 拍平列模式的主表）。badge 路径为 [行索引, 列名] */
+function renderCellMain(v, colName, rowIdx, isNumCol, term) {
+  const dc = ` data-copy="${escAttr(cellText(v))}"`;
+  if (isObj(v) || Array.isArray(v)) {
+    return `<td${isNumCol ? ' class="num-cell"' : ''}${dc}>${badgeHTML([rowIdx, colName], v)}</td>`;
+  }
+  if (v === undefined || v === null) {
+    return `<td${isNumCol ? ' class="num-cell"' : ''}${dc}><span class="${v === null ? 'null' : 'missing'}">${v === null ? 'null' : '—'}</span></td>`;
+  }
+  return primitiveCellHTML(v, term);
+}
+
+/* 分层模式单元格：数组→提示指向行下方子表；空对象→标记；其余基础类型 */
+function renderCellLayered(v, term) {
+  const dc = ` data-copy="${escAttr(cellText(v))}"`;
+  if (Array.isArray(v)) return `<td${dc}><span class="subhint">↳ ${v.length} 条</span></td>`;
+  if (isObj(v)) return `<td${dc}><span class="missing">{ }</span></td>`;
+  return primitiveCellHTML(v, term);
+}
+
+/* 分层模式：把数组渲染为独立子表（自有表头，可多层递归嵌套） */
+function layeredSubTable(arr) {
+  const items = arr.map(it => isObj(it) ? flattenRow(it) : { '值': it });
+  const cols = buildColumns(items);
+  let html = '<table class="grid sub"><thead><tr><th class="idx">#</th>';
+  for (const c of cols) html += `<th title="${escAttr(c)}">${esc(c)}</th>`;
+  html += '</tr></thead><tbody>';
+  items.forEach((item, i) => {
+    const val = c => Object.prototype.hasOwnProperty.call(item, c) ? item[c] : undefined;
+    html += `<tr><td class="idx">${i + 1}</td>`;
+    for (const c of cols) html += renderCellLayered(val(c), '');
+    html += '</tr>';
+    for (const c of cols) {
+      const v = val(c);
+      if (Array.isArray(v) && v.length) {
+        html += `<tr class="layer-tr"><td class="idx"></td><td colspan="${cols.length}">` +
+          `<section class="subsec"><div class="subcap">${esc(c)} · ${v.length} 条</div>${layeredSubTable(v)}</section></td></tr>`;
+      }
+    }
+  });
+  return html + '</tbody></table>';
+}
+
+/* 浮层内子表的单元格（无高亮需求） */
+function renderCellSub(v, path) {
+  if (v === undefined) return '<td><span class="missing">—</span></td>';
+  if (v === null) return '<td><span class="null">null</span></td>';
+  if (typeof v === 'boolean') return `<td class="${v ? 'bool-true' : 'bool-false'}">${v}</td>`;
+  if (isObj(v) || Array.isArray(v)) return `<td>${badgeHTML(path, v)}</td>`;
+  const s = typeof v === 'number' ? String(v) : String(v);
+  const text = s === '' ? '<span class="missing">""</span>' : esc(s);
+  return `<td class="${typeof v === 'number' ? 'num-cell' : 'mono'}"><span class="celltext" title="${escAttr(s)}">${text}</span></td>`;
+}
+
+function renderTable() {
+  closeAllPopovers(true);   // 数据浮层随重渲染关闭，列菜单（_keep）保持打开
+  clearSelection();
+  grid.classList.toggle('layered', state.mode === 'layered');
+  const empty = $('emptyState');
+  if (!state.hasData) {
+    grid.innerHTML = '';
+    $('emptyTitle').textContent = state.error ? 'JSON 有误，请先修正左侧输入' : '在左侧粘贴 JSON，表格将实时生成';
+    empty.hidden = false;
+    return;
+  }
+  if (state.rows.length === 0) {
+    grid.innerHTML = '';
+    $('emptyTitle').textContent = '数组为空，没有可显示的行';
+    empty.hidden = false;
+    return;
+  }
+  empty.hidden = true;
+
+  const view = currentView();
+  state.filteredCount = view.idxs.length;
+
+  // 全为数字（含空）的列右对齐
+  const numCols = new Set(view.cols.filter(c =>
+    view.idxs.every(i => { const v = getVal(i, c); return v === undefined || v === null || typeof v === 'number'; })));
+
+  let html = '<thead><tr><th class="idx">#</th>';
+  for (const c of view.cols) {
+    const sorted = state.sort.col === c;
+    const arrow = sorted ? `<span class="th-arrow">${state.sort.dir === 1 ? '▲' : '▼'}</span>` : '<span class="th-gap"></span>';
+    html += `<th${numCols.has(c) ? ' class="num-cell' + (sorted ? ' sorted' : '') + '"' : (sorted ? ' class="sorted"' : '')} data-col="${escAttr(c)}" title="${escAttr(c)}">${esc(c)}${arrow}</th>`;
+  }
+  html += '</tr></thead><tbody>';
+  if (state.mode === 'layered') {
+    view.idxs.forEach((rowIdx, pos) => {
+      html += `<tr><td class="idx">${pos + 1}</td>`;
+      for (const c of view.cols) html += renderCellLayered(getVal(rowIdx, c), view.term);
+      html += '</tr>';
+      for (const c of view.cols) {
+        const v = getVal(rowIdx, c);
+        if (Array.isArray(v) && v.length) {
+          html += `<tr class="layer-tr"><td class="idx"></td><td colspan="${view.cols.length}">` +
+            `<section class="subsec"><div class="subcap">${esc(c)} · ${v.length} 条</div>${layeredSubTable(v)}</section></td></tr>`;
+        }
+      }
+    });
+  } else {
+    view.idxs.forEach((rowIdx, pos) => {
+      html += `<tr><td class="idx">${pos + 1}</td>`;
+      for (const c of view.cols) html += renderCellMain(getVal(rowIdx, c), c, rowIdx, numCols.has(c), view.term);
+      html += '</tr>';
+    });
+  }
+  html += '</tbody>';
+  grid.innerHTML = html;
+}
+
+function updateFooters() {
+  refreshHighlight();   // 输入/示例/格式化/拖入/清空等所有改值路径都会经过这里
+  $('charCount').textContent = `${$('jsonInput').value.length.toLocaleString()} 字符`;
+  if (!state.hasData || state.rows.length === 0) { $('tableStats').textContent = '—'; return; }
+  const total = effectiveRows().length;
+  const shown = state.filteredCount !== undefined ? state.filteredCount : total;
+  const filtered = state.search.trim() ? ` · 过滤出 ${shown} / ${total} 行` : '';
+  const sortInfo = state.sort.dir ? ` · 按「${state.sort.col}」${state.sort.dir === 1 ? '升' : '降'}序` : '';
+  $('tableStats').textContent = `${total} 行 × ${state.columns.length} 列${filtered}${sortInfo}`;
+}
+
+/* ══════════════ 浮层 ══════════════ */
+function resolvePath(root, path) {
+  let v = root;
+  for (const seg of path) v = v == null ? undefined : v[seg];
+  return v;
+}
+
+function openPopover(anchor, title, root, buildBody, keep) {
+  const depth = popovers.length;
+  const pop = document.createElement('div');
+  pop.className = 'popover';
+  pop.innerHTML = `<div class="popover-head"><span class="ptitle"></span><button class="pclose" title="关闭">✕</button></div><div class="popover-body"></div>`;
+  pop.querySelector('.ptitle').textContent = title;
+  pop._root = root;
+  pop._keep = !!keep;
+  buildBody(pop.querySelector('.popover-body'), root);
+  document.body.appendChild(pop);
+
+  const r = anchor.getBoundingClientRect();
+  const pw = pop.offsetWidth, ph = pop.offsetHeight;
+  const offset = depth * 16;
+  let x = r.left + offset, y = r.bottom + 6 + offset;
+  if (x + pw > window.innerWidth - 8) x = Math.max(8, window.innerWidth - pw - 8);
+  if (y + ph > window.innerHeight - 8) y = Math.max(8, r.top - ph - 6);
+  pop.style.left = x + 'px';
+  pop.style.top = y + 'px';
+
+  pop.addEventListener('mousedown', e => e.stopPropagation());
+  pop.querySelector('.pclose').addEventListener('click', () => closePopover(pop));
+  pop.addEventListener('click', e => {
+    let badge = e.target.closest('.badge[data-path]');
+    if (!badge && e.target.querySelector) badge = e.target.querySelector('.badge[data-path]');
+    if (badge) {
+      const path = JSON.parse(badge.dataset.path);
+      const v = resolvePath(pop._root, path);
+      const label = typeof path[path.length - 1] === 'number' ? `${title} · 第 ${path[path.length - 1] + 1} 项` : String(path[path.length - 1]);
+      openPopover(badge, label, v, buildValueBody);
+    }
+  });
+  popovers.push(pop);
+  return pop;
+}
+
+function closePopover(pop) {
+  const i = popovers.indexOf(pop);
+  if (i !== -1) {
+    for (let j = popovers.length - 1; j >= i; j--) popovers[j].remove();
+    popovers.length = i;
+  } else {
+    pop.remove();
+  }
+}
+
+function closeAllPopovers(keepMenu) {
+  for (let j = popovers.length - 1; j >= 0; j--) {
+    if (keepMenu && popovers[j]._keep) continue;
+    popovers[j].remove();
+    popovers.splice(j, 1);
+  }
+}
+
+/* 把一个对象 / 数组渲染为子表格 HTML */
+function valueTableHTML(v) {
+  if (isObj(v)) {
+    const entries = Object.entries(v);
+    if (entries.length === 0) return '<div class="menu-item missing">空对象</div>';
+    let html = '<table class="grid"><thead><tr><th>字段</th><th>值</th></tr></thead><tbody>';
+    for (const [k, val] of entries) {
+      html += `<tr><td class="mono" style="color:var(--muted)">${esc(k)}</td>${renderCellSub(val, [k])}</tr>`;
+    }
+    return html + '</tbody></table>';
+  }
+  if (Array.isArray(v)) {
+    if (v.length === 0) return '<div class="menu-item missing">空数组</div>';
+    const hasObj = v.some(isObj);
+    if (!hasObj) {
+      let html = '<table class="grid"><thead><tr><th class="idx">#</th><th>值</th></tr></thead><tbody>';
+      v.forEach((item, i) => { html += `<tr><td class="idx">${i + 1}</td>${renderCellSub(item, [i])}</tr>`; });
+      return html + '</tbody></table>';
+    }
+    // 含对象：取对象键的并集；非对象项放入「(值)」列
+    const cols = [];
+    const seen = new Set();
+    for (const it of v) if (isObj(it)) for (const k of Object.keys(it)) if (!seen.has(k)) { seen.add(k); cols.push(k); }
+    const hasNonObj = v.some(it => !isObj(it));
+    let head = '<th class="idx">#</th>' + (hasNonObj ? '<th>(值)</th>' : '');
+    for (const c of cols) head += `<th>${esc(c)}</th>`;
+    let html = `<table class="grid"><thead><tr>${head}</tr></thead><tbody>`;
+    v.forEach((it, i) => {
+      html += `<tr><td class="idx">${i + 1}</td>`;
+      if (hasNonObj) html += isObj(it) ? '<td><span class="missing">—</span></td>' : renderCellSub(it, [i]);
+      for (const c of cols) html += isObj(it) ? renderCellSub(Object.prototype.hasOwnProperty.call(it, c) ? it[c] : undefined, [i, c]) : '<td><span class="missing">—</span></td>';
+      html += '</tr>';
+    });
+    return html + '</tbody></table>';
+  }
+  return `<div class="menu-item mono">${esc(String(v))}</div>`;
+}
+
+function buildValueBody(bodyEl, v) { bodyEl.innerHTML = valueTableHTML(v); }
+
+/* ══════════════ 单元格选择与复制（类 Excel） ══════════════ */
+const selState = { table: null, r1: 0, c1: 0, r2: 0, c2: 0, dragging: false, active: false };
+
+function tdAt(x, y) {
+  const el = document.elementFromPoint(x, y);
+  return el && el.closest ? el.closest('td[data-copy]') : null;
+}
+
+function selRange() {
+  return {
+    table: selState.table,
+    lo: Math.min(selState.r1, selState.r2), hi: Math.max(selState.r1, selState.r2),
+    clo: Math.min(selState.c1, selState.c2), chi: Math.max(selState.c1, selState.c2),
+  };
+}
+
+function eachSelTd(fn) {
+  if (!selState.active || !selState.table) return;
+  const { table, lo, hi, clo, chi } = selRange();
+  for (const tr of table.rows) {
+    if (tr.rowIndex < lo || tr.rowIndex > hi || tr.classList.contains('layer-tr')) continue;
+    for (let c = clo; c <= chi; c++) {
+      const td = tr.cells[c];
+      if (td && td.dataset.copy !== undefined) fn(td);
+    }
+  }
+}
+
+function paintSelection() {
+  document.querySelectorAll('td.cell-sel').forEach(td => td.classList.remove('cell-sel'));
+  eachSelTd(td => td.classList.add('cell-sel'));
+}
+
+function selectionTsv() {
+  if (!selState.active || !selState.table) return null;
+  const lines = [];
+  const { lo, hi, clo, chi } = selRange();
+  for (const tr of selState.table.rows) {
+    if (tr.rowIndex < lo || tr.rowIndex > hi || tr.classList.contains('layer-tr')) continue;
+    const cells = [];
+    for (let c = clo; c <= chi; c++) cells.push(tr.cells[c] ? (tr.cells[c].dataset.copy || '') : '');
+    lines.push(cells.join('\t'));
+  }
+  return lines.join('\n');
+}
+
+function clearSelection() {
+  selState.active = false;
+  selState.dragging = false;
+  document.querySelectorAll('td.cell-sel').forEach(td => td.classList.remove('cell-sel'));
+}
+
+document.addEventListener('mousedown', e => {
+  if (e.button !== 0) return;
+  const td = e.target.closest ? e.target.closest('td[data-copy]') : null;
+  if (!td || td.querySelector('.badge')) {
+    // 点到非数据单元格（输入框、列头、空白处、徽标格等）→ 清除选区
+    if (!td) clearSelection();
+    return;
+  }
+  const table = td.closest('table.grid');
+  if (!table) return;
+  e.preventDefault();   // 拦截原生文本选择，改为框选高亮
+  const ae = document.activeElement;   // 还原 mousedown 默认行为：离开输入框
+  if (ae && (ae.tagName === 'TEXTAREA' || ae.tagName === 'INPUT')) ae.blur();
+  selState.table = table;
+  selState.r1 = selState.r2 = td.parentElement.rowIndex;
+  selState.c1 = selState.c2 = td.cellIndex;
+  selState.dragging = true;
+  selState.active = true;
+  paintSelection();
+});
+
+document.addEventListener('mousemove', e => {
+  if (!selState.dragging) return;
+  const td = tdAt(e.clientX, e.clientY);
+  if (!td || td.closest('table.grid') !== selState.table) return;
+  selState.r2 = td.parentElement.rowIndex;
+  selState.c2 = td.cellIndex;
+  paintSelection();
+});
+
+document.addEventListener('mouseup', () => {
+  selState.dragging = false;
+});
+
+// 双击单元格 → 复制其内容
+document.addEventListener('dblclick', e => {
+  if (e.target.closest && e.target.closest('.badge')) return;   // 徽标保持弹层行为
+  const td = e.target.closest ? e.target.closest('td[data-copy]') : null;
+  if (!td) return;
+  copyText(td.dataset.copy, '已复制单元格内容');
+});
+
+// Ctrl / ⌘ + C 复制当前选区（焦点在输入框或存在原生文本选区时不拦截，走原生复制）
+document.addEventListener('keydown', e => {
+  if (!(e.ctrlKey || e.metaKey) || (e.key !== 'c' && e.key !== 'C') || !selState.active) return;
+  const ae = document.activeElement;
+  if (ae && (ae.tagName === 'TEXTAREA' || ae.tagName === 'INPUT')) return;
+  const native = window.getSelection ? String(window.getSelection()) : '';
+  if (native.trim()) return;
+  const tsv = selectionTsv();
+  if (tsv !== null) {
+    e.preventDefault();
+    copyText(tsv, '已复制选区，可直接粘贴进 Excel');
+  }
+});
+
+
+/* ══════════════ 事件绑定 ══════════════ */
+// 主表：badge 展开 + 列头排序（事件委托；点中徽标所在单元格同样生效）
+grid.addEventListener('click', e => {
+  let badge = e.target.closest('.badge[data-path]');
+  if (!badge && e.target.querySelector) badge = e.target.querySelector('.badge[data-path]');
+  if (badge) {
+    const [rowIdx, colName] = JSON.parse(badge.dataset.path);
+    const rowSrc = state.mode === 'flatten' ? state.flatRows : state.rows;
+    const v = resolvePath(rowSrc, [rowIdx, colName]);
+    openPopover(badge, String(colName), v, buildValueBody);
+    return;
+  }
+  const th = e.target.closest('thead th[data-col]');
+  if (th) {
+    const col = th.dataset.col;
+    if (state.sort.col !== col) state.sort = { col, dir: 1 };
+    else if (state.sort.dir === 1) state.sort.dir = -1;
+    else state.sort = { col: null, dir: 0 };
+    renderTable();
+    updateFooters();
+  }
+});
+
+// 点击浮层外部：关闭最外层未点中的浮层
+document.addEventListener('mousedown', () => {
+  while (popovers.length) {
+    const top = popovers[popovers.length - 1];
+    // pop 自身 mousedown 已 stopPropagation，能到这里说明点在外面
+    closePopover(top);
+  }
+});
+
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape') {
+    clearSelection();
+    if (!$('helpModal').hidden) { $('helpModal').hidden = true; return; }
+    if (popovers.length) closePopover(popovers[popovers.length - 1]);
+  }
+});
+
+// 输入：防抖自动转换 + 字符统计
+$('jsonInput').addEventListener('input', () => {
+  updateFooters();
+  if (!state.autoConvert) return;
+  clearTimeout(convertTimer);
+  convertTimer = setTimeout(convert, 300);
+});
+
+// 高亮层与输入框滚动同步
+$('jsonInput').addEventListener('scroll', () => {
+  const ta = $('jsonInput'), hl = $('hl');
+  hl.scrollTop = ta.scrollTop;
+  hl.scrollLeft = ta.scrollLeft;
+});
+
+// 搜索
+$('searchInput').addEventListener('input', e => {
+  state.search = e.target.value;
+  if (state.hasData) { renderTable(); updateFooters(); }
+});
+
+// 展示模式切换（分层展开 / 拍平列 / 徽标）
+(() => {
+  const seg = $('viewModeSeg');
+  const sync = () => seg.querySelectorAll('label').forEach(l =>
+    l.classList.toggle('on', l.dataset.mode === state.mode));
+  seg.addEventListener('change', e => {
+    const radio = e.target.closest('input[name="viewMode"]');
+    if (!radio || !radio.checked) return;
+    state.mode = radio.value;
+    sync();
+    closeAllPopovers(false);   // 列集合已变化，菜单与浮层内容失效
+    if (state.hasData) {
+      resetSortAndCols();
+      recomputeDerived();
+    }
+    render();
+  });
+  sync();
+})();
+
+// 自动转换开关
+$('autoConvert').addEventListener('change', e => {
+  state.autoConvert = e.target.checked;
+  $('btnConvert').hidden = state.autoConvert;
+  if (state.autoConvert) convert();
+});
+$('btnConvert').addEventListener('click', convert);
+
+// 示例 / 格式化 / 清空
+const SAMPLE = [
+  { "名称": "张三", "年龄": 28, "在职": true, "部门": "仓储部",
+    "地址": { "省份": "广东省", "城市": "深圳市", "邮编": "518000" },
+    "标签": ["FBA", "加急"], "备注": null },
+  { "名称": "李四", "年龄": 35, "在职": false, "部门": "运输部",
+    "地址": { "省份": "浙江省", "城市": "杭州市", "邮编": "310000" },
+    "标签": ["海运"], "备注": "周五前送达" },
+  { "名称": "王五", "年龄": 42, "部门": "仓储部", "入职时间": "2021-03-15",
+    "标签": ["FBA", "正常", "优先"] },
+  { "名称": "赵六", "部门": "客服部", "地址": { "省份": "上海市", "城市": "上海市" },
+    "标签": [], "在职": true },
+  { "名称": "EXT01 分拨中心", "库存": { "可用": 1204, "在途": 88, "滞销": { "天数": 45, "数量": 17 } },
+    "站点": ["US", "DE", "JP"], "更新时间": "2026-09-01 08:30", "启用": true },
+  { "名称": "EXT02 分拨中心", "库存": { "可用": 376, "在途": 12 }, "站点": ["UK"],
+    "更新时间": "2026-09-08 16:00", "启用": false },
+  { "名称": "SO-2026 批次", "日期": "2026-09-10",
+    "订单": [
+      { "单号": "SO-1001", "币种": "USD",
+        "明细": [ { "SKU": "A-1001", "数量": 2, "单价": 19.9 }, { "SKU": "B-2002", "数量": 1, "单价": 45.0 } ] },
+      { "单号": "SO-1002", "币种": "USD",
+        "明细": [ { "SKU": "C-3003", "数量": 5, "单价": 8.8 } ] }
+    ] }
+];
+
+function fillSample() {
+  $('jsonInput').value = JSON.stringify(SAMPLE, null, 2);
+  convert();
+}
+$('btnSample').addEventListener('click', fillSample);
+$('btnSample2').addEventListener('click', fillSample);
+
+$('btnFormat').addEventListener('click', () => {
+  const text = $('jsonInput').value.trim();
+  if (!text) return;
+  try {
+    $('jsonInput').value = JSON.stringify(JSON.parse(text), null, 2);
+    if (state.autoConvert) convert(); else updateFooters();
+  } catch (e) {
+    toast('JSON 有误，无法格式化：' + describeError(e, text));
+  }
+});
+
+$('btnClear').addEventListener('click', () => {
+  $('jsonInput').value = '';
+  $('searchInput').value = '';
+  state.search = '';
+  convert();
+  $('jsonInput').focus();
+});
+
+// 列显示菜单
+$('btnCols').addEventListener('click', e => {
+  const existed = popovers.some(p => p._keep);
+  if (existed) { closeAllPopovers(false); return; }
+  closeAllPopovers(false);
+  if (!state.hasData || state.columns.length === 0) { toast('暂无数据，先在左侧粘贴 JSON'); return; }
+  openPopover(e.currentTarget, `列显示（${state.columns.length}）`, null, body => {
+    body.innerHTML =
+      `<div class="menu-actions"><button data-act="all">全选</button><button data-act="none">全不选</button></div>` +
+      state.columns.map((c, i) =>
+        `<label class="menu-item"><input type="checkbox" data-ci="${i}" ${state.hiddenCols.has(c) ? '' : 'checked'}><span class="mono">${esc(c)}</span></label>`
+      ).join('');
+    body.addEventListener('change', ev => {
+      const cb = ev.target.closest('input[data-ci]');
+      if (!cb) return;
+      const col = state.columns[+cb.dataset.ci];
+      if (cb.checked) state.hiddenCols.delete(col); else state.hiddenCols.add(col);
+      renderTable(); updateFooters();
+    });
+    body.addEventListener('click', ev => {
+      const btn = ev.target.closest('button[data-act]');
+      if (!btn) return;
+      if (btn.dataset.act === 'all') state.hiddenCols.clear();
+      else state.columns.forEach(c => state.hiddenCols.add(c));
+      body.querySelectorAll('input[data-ci]').forEach(cb => {
+        cb.checked = btn.dataset.act === 'all';
+      });
+      renderTable(); updateFooters();
+    });
+  }, true);
+});
+
+// 复制 / 导出
+function toast(msg) {
+  const t = $('toast');
+  t.textContent = msg;
+  t.classList.add('show');
+  clearTimeout(toast._timer);
+  toast._timer = setTimeout(() => t.classList.remove('show'), 1800);
+}
+
+function copyText(text, okMsg) {
+  const done = () => toast(okMsg);
+  const fail = () => {
+    const ta = document.createElement('textarea');
+    ta.value = text;
+    ta.style.cssText = 'position:fixed;opacity:0';
+    document.body.appendChild(ta);
+    ta.select();
+    try { document.execCommand('copy'); done(); }
+    catch (e) { toast('复制失败，请手动复制'); }
+    ta.remove();
+  };
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(text).then(done, fail);
+  } else fail();
+}
+
+function requireView() {
+  if (!state.hasData || state.rows.length === 0) { toast('暂无数据可导出'); return null; }
+  return currentView();
+}
+
+$('btnCopyTsv').addEventListener('click', () => {
+  const view = requireView(); if (!view) return;
+  copyText(buildTsv(view), `已复制 TSV（${view.idxs.length} 行），可直接粘贴进 Excel / 飞书表格`);
+});
+$('btnCopyMd').addEventListener('click', () => {
+  const view = requireView(); if (!view) return;
+  copyText(buildMarkdown(view), `已复制 Markdown 表格（${view.idxs.length} 行）`);
+});
+$('btnCsv').addEventListener('click', () => {
+  const view = requireView(); if (!view) return;
+  const blob = new Blob(['\uFEFF' + buildCsv(view)], { type: 'text/csv;charset=utf-8' });
+  const a = document.createElement('a');
+  const ts = new Date().toISOString().slice(0, 19).replace(/[-:T]/g, '');
+  a.href = URL.createObjectURL(blob);
+  a.download = `json-table-${ts}.csv`;
+  document.body.appendChild(a);
+  a.click();
+  setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 0);
+  toast(`已导出 CSV（${view.idxs.length} 行）`);
+});
+
+// 主题
+function applyTheme(t) {
+  document.documentElement.dataset.theme = t;
+  $('btnTheme').textContent = t === 'dark' ? '☀️' : '🌙';
+  try { localStorage.setItem('jt-theme', t); } catch (e) { /* 忽略 */ }
+}
+$('btnTheme').addEventListener('click', () => {
+  applyTheme(document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark');
+});
+
+// 帮助
+$('btnHelp').addEventListener('click', () => { $('helpModal').hidden = false; });
+$('btnHelpClose').addEventListener('click', () => { $('helpModal').hidden = true; });
+$('helpModal').addEventListener('click', e => {
+  if (e.target === $('helpModal')) $('helpModal').hidden = true;
+});
+
+// 分栏拖拽
+(() => {
+  const divider = $('divider'), paneLeft = $('paneLeft'), main = $('main');
+  let dragging = false;
+  divider.addEventListener('mousedown', e => {
+    e.preventDefault();
+    dragging = true;
+    divider.classList.add('active');
+    document.body.style.cursor = 'col-resize';
+    document.body.style.userSelect = 'none';
+  });
+  document.addEventListener('mousemove', e => {
+    if (!dragging) return;
+    const rect = main.getBoundingClientRect();
+    const pct = Math.min(78, Math.max(22, (e.clientX - rect.left) / rect.width * 100));
+    paneLeft.style.width = pct + '%';
+  });
+  document.addEventListener('mouseup', () => {
+    if (!dragging) return;
+    dragging = false;
+    divider.classList.remove('active');
+    document.body.style.cursor = '';
+    document.body.style.userSelect = '';
+  });
+})();
+
+// 拖入 .json 文件
+(() => {
+  const pane = $('paneLeft'), input = $('jsonInput');
+  pane.addEventListener('dragover', e => { e.preventDefault(); pane.classList.add('dragover'); });
+  pane.addEventListener('dragleave', () => pane.classList.remove('dragover'));
+  pane.addEventListener('drop', e => {
+    e.preventDefault();
+    pane.classList.remove('dragover');
+    const file = e.dataTransfer.files && e.dataTransfer.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      input.value = String(reader.result);
+      if (state.autoConvert) convert(); else updateFooters();
+      toast(`已载入 ${file.name}`);
+    };
+    reader.readAsText(file);
+  });
+})();
+
+// 初始化
+(() => {
+  let theme = null;
+  try { theme = localStorage.getItem('jt-theme'); } catch (e) { /* 忽略 */ }
+  if (!theme) {
+    theme = (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) ? 'dark' : 'light';
+  }
+  applyTheme(theme);
+  updateFooters();
+})();
+</script>
+</body>
+</html>
