@@ -1,10 +1,10 @@
 # JSON → 表格
 
-一个零依赖的单文件网页工具：粘贴 JSON，实时转成可排序、可搜索、可导出的表格。数据全部在浏览器本地处理，不上传。
+一个零依赖的纯前端网页工具：粘贴 JSON，实时转成可排序、可搜索、可导出的表格。数据全部在浏览器本地处理，不上传。
 
 ## 使用方法
 
-直接双击 `index.html` 用任意现代浏览器（Chrome / Edge / Safari / Firefox）打开即可，无需安装任何东西。
+直接双击 `index.html` 用任意现代浏览器（Chrome / Edge / Safari / Firefox）打开即可，无需安装任何东西（代码已拆分为 HTML / CSS / JS 标准结构，双击打开时保持同目录即可）。
 
 ## 功能
 
@@ -45,7 +45,7 @@
 - **导出 CSV**：带 UTF-8 BOM，Excel 打开不乱码
 
 ### 其他
-- 亮 / 暗色主题一键切换（跟随系统偏好，自动记忆）
+- 亮 / 暗色主题一键切换（跟随系统偏好，自动记忆），配色基于 [Catppuccin](https://catppuccin.com/palette)（亮色 = Latte，暗色 = Mocha）
 - 窄屏（<900px）自动切换上下布局；左右分栏宽度可拖动调整
 
 ## 常见问题
@@ -56,4 +56,17 @@
 
 ## 文件说明
 
-- `index.html` — 全部代码（HTML + CSS + JS 单文件，约 1100 行）
+```
+├── index.html                       # 页面结构
+├── css/style.css                    # 全部样式（含亮 / 暗主题、设计 token）
+├── js/
+│   ├── util.js                      # 纯逻辑：转义 / 高亮 / JSON 规范化与拍平 / 导出构建
+│   ├── render.js                    # 编辑器高亮与折叠 · 表格渲染 · 浮层 · 单元格框选
+│   └── main.js                      # 共享状态 · 事件绑定 · 主题 · 初始化
+└── assets/
+    ├── json-to-table-icon.svg       # 图标
+    ├── JetBrainsMono-Regular.woff2  # 等宽字体（OFL 开源协议，Latin 子集）
+    └── JetBrainsMono-Medium.woff2   # 等宽字体 500–700 字重（表头 / 标题）
+```
+
+等宽字体（编辑器与表格英文 / 数字）使用本地 JetBrains Mono，跨平台渲染一致清晰；中文字符等未包含字形自动回退系统字体。
